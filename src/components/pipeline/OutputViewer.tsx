@@ -132,9 +132,11 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       if (res.status === 401) {
         // Not authorized for Google yet — redirect to OAuth consent
         const encodedFile = encodeURIComponent(file.name);
-        window.location.href = `${BASE}/auth/google?project=${encodeURIComponent(projectName)}&step=${stepId}&filename=${encodedFile}`;
+        const jwt = localStorage.getItem('qcm_token') || '';
+        window.location.href = `${BASE}/auth/google?project=${encodeURIComponent(projectName)}&step=${stepId}&filename=${encodedFile}&token=${encodeURIComponent(jwt)}`;
         return;
       }
+
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       window.open(data.url, '_blank');
