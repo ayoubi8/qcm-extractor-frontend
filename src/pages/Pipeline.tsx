@@ -16,34 +16,41 @@ export function Pipeline() {
 
   useEffect(() => {
     const sheetsPending = searchParams.get('sheets_pending') === '1'
-    const project      = searchParams.get('project') || ''
-    const step         = searchParams.get('step') || ''
-    const filename     = searchParams.get('filename') || ''
-    const BASE         = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const token        = localStorage.getItem('qcm_token') || ''
+    const projectName   = searchParams.get('project') || ''
+    const step          = searchParams.get('step') || ''
+    const filename      = searchParams.get('filename') || ''
+    const BASE          = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+    const token         = localStorage.getItem('qcm_token') || ''
+    const authHeaders   = token ? { 'Authorization': `Bearer ${token}` } : {}
 
-    // If project is in URL, activate it in the store so the sidebar shows it
-    if (project && setActiveProject) {
-      setActiveProject(project)
-    }
+    if (!projectName) return
 
-    if (sheetsPending && project && step && filename) {
-      // Clear the URL params so a refresh doesn't re-trigger
-      setSearchParams({})
-      // Auto-retry the upload now that we have a Google token
-      fetch(`${BASE}/projects/${encodeURIComponent(project)}/steps/${step}/open-sheets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ filename })
-      }).then(r => r.json()).then(data => {
-        if (data.url) window.open(data.url, '_blank')
-        else console.error('Sheets upload succeeded but no URL returned:', data)
-      }).catch(err => console.error('Auto-retry sheets upload failed:', err))
-    }
+    // Clear URL params immediately so a refresh doesn't re-trigger
+    setSearchParams({})
+
+    // Fetch the full project object (has pdf_path, last_step, etc.) and activate it
+    fetch(`${BASE}/projects`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(data => {
+        const found = (data.projects || []).find((p: any) => p.name === projectName)
+        if (found) setActiveProject(found)
+
+        // If sheets_pending, also trigger the upload now that creds are saved
+        if (sheetsPending && step && filename) {
+          fetch(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/${step}/open-sheets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ filename })
+          }).then(r => r.json()).then(data => {
+            if (data.url) window.open(data.url, '_blank')
+            else console.error('Sheets retry: no URL returned', data)
+          }).catch(err => console.error('Sheets retry failed:', err))
+        }
+      })
+      .catch(err => console.error('Pipeline: failed to load projects', err))
   }, [searchParams])
+
+
 
 
   return (
