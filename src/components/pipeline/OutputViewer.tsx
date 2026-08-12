@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile } from '../../lib/api';
+import { useState, useEffect, useRef } from 'react';
+import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncStep6FromSheets } from '../../lib/api';
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -26,6 +26,70 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
   const [historyRuns, setHistoryRuns] = useState<any[]>([]);
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Step 6 auto-sync state
+  const [syncing, setSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+  const hasOpenedSheetRef = useRef(false);
+  const syncingRef = useRef(false);  // guard against overlapping sync calls
+
+  // Auto-sync from Google Sheets when the user returns to our tab (Step 6 only)
+  useEffect(() => {
+    if (stepId !== "6") return;
+
+    const onVisibility = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (!hasOpenedSheetRef.current) return;     // only sync if user actually opened Sheets
+      if (syncingRef.current) return;             // prevent overlapping syncs
+      syncingRef.current = true;
+      setSyncing(true);
+      try {
+        const result = await syncStep6FromSheets(projectName);
+        if (result.newly_corrected > 0) {
+          // Refresh file list so the new timestamped xlsx appears
+          try {
+            const data = await fetchStepOutput(projectName, stepId);
+            setFiles(data.files);
+          } catch {}
+          setSyncToast(`Synced ${result.newly_corrected} new correction${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
+          setTimeout(() => setSyncToast(null), 4000);
+        }
+      } catch (e: any) {
+        // 409 = no sheet opened yet, 401 = need re-auth — silent in auto-mode
+        console.error("Auto-sync from Sheets failed:", e?.message || e);
+      } finally {
+        syncingRef.current = false;
+        setSyncing(false);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [stepId, projectName]);
+
+  const handleManualSync = async () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing(true);
+    try {
+      const result = await syncStep6FromSheets(projectName);
+      if (result.newly_corrected > 0) {
+        try {
+          const data = await fetchStepOutput(projectName, stepId);
+          setFiles(data.files);
+        } catch {}
+        setSyncToast(`Synced ${result.newly_corrected} new correction${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
+      } else {
+        setSyncToast(`Sheet is up to date (${result.corrected_count} corrections)`);
+      }
+      setTimeout(() => setSyncToast(null), 4000);
+    } catch (e: any) {
+      alert(e?.message || 'Sync from Sheets failed');
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     async function loadAll() {
@@ -123,6 +187,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
 
   const openInSheets = async (file: any) => {
     setSheetsLoading(file.name);
+    if (stepId === "6") hasOpenedSheetRef.current = true;
     // Pre-open window immediately to bypass popup blocker
     const newTab = window.open('about:blank', '_blank');
     try {
@@ -249,6 +314,14 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       )}
 
       <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
+        {syncToast && (
+          <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-2 fade-in duration-300">
+            <div className="bg-primary/10 border border-primary/30 text-primary text-xs font-bold px-4 py-3 rounded-xl shadow-lg backdrop-blur flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px]">cloud_done</span>
+              {syncToast}
+            </div>
+          </div>
+        )}
         {(showHistory ? (historyRuns.find(r => r.run_id === selectedRun)?.files || []) : files).map((file) => (
           <div key={file.name} className="space-y-2">
             <div className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
@@ -336,6 +409,20 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
                     : <span className="material-symbols-outlined text-[16px]">open_in_new</span>
                   }
                 </button>
+
+                {stepId === "6" && file.name.endsWith('.xlsx') && !showHistory && (
+                  <button
+                    onClick={handleManualSync}
+                    title="Pull the latest edits back from Google Sheets"
+                    disabled={syncing}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  >
+                    {syncing
+                      ? <span className="material-symbols-outlined text-[14px] animate-spin">sync</span>
+                      : <span className="material-symbols-outlined text-[16px]">cloud_sync</span>
+                    }
+                  </button>
+                )}
               </div>
             </div>
 
