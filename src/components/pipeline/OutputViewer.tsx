@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncStep6FromSheets } from '../../lib/api';
+import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncFromSheets } from '../../lib/api';
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -33,9 +33,9 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
   const hasOpenedSheetRef = useRef(false);
   const syncingRef = useRef(false);  // guard against overlapping sync calls
 
-  // Auto-sync from Google Sheets when the user returns to our tab (Step 6 only)
+  // Auto-sync from Google Sheets when the user returns to our tab (Steps 2 & 6)
   useEffect(() => {
-    if (stepId !== "6") return;
+    if (!["2", "6"].includes(stepId)) return;
 
     const onVisibility = async () => {
       if (document.visibilityState !== "visible") return;
@@ -44,14 +44,14 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       syncingRef.current = true;
       setSyncing(true);
       try {
-        const result = await syncStep6FromSheets(projectName);
+        const result = await syncFromSheets(projectName, stepId);
         if (result.newly_corrected > 0) {
           // Refresh file list so the new timestamped xlsx appears
           try {
             const data = await fetchStepOutput(projectName, stepId);
             setFiles(data.files);
           } catch {}
-          setSyncToast(`Synced ${result.newly_corrected} new correction${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
+          setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
           setTimeout(() => setSyncToast(null), 4000);
         }
       } catch (e: any) {
@@ -72,15 +72,15 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
     syncingRef.current = true;
     setSyncing(true);
     try {
-      const result = await syncStep6FromSheets(projectName);
+      const result = await syncFromSheets(projectName, stepId);
       if (result.newly_corrected > 0) {
         try {
           const data = await fetchStepOutput(projectName, stepId);
           setFiles(data.files);
         } catch {}
-        setSyncToast(`Synced ${result.newly_corrected} new correction${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
+        setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
       } else {
-        setSyncToast(`Sheet is up to date (${result.corrected_count} corrections)`);
+        setSyncToast(`Sheet is up to date (${result.total} rows)`);
       }
       setTimeout(() => setSyncToast(null), 4000);
     } catch (e: any) {
@@ -187,7 +187,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
 
   const openInSheets = async (file: any) => {
     setSheetsLoading(file.name);
-    if (stepId === "6") hasOpenedSheetRef.current = true;
+    if (["2", "6"].includes(stepId)) hasOpenedSheetRef.current = true;
     // Pre-open window immediately to bypass popup blocker
     const newTab = window.open('about:blank', '_blank');
     try {
@@ -410,7 +410,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
                   }
                 </button>
 
-                {stepId === "6" && file.name.endsWith('.xlsx') && !showHistory && (
+                {["2", "6"].includes(stepId) && file.name.endsWith('.xlsx') && !showHistory && (
                   <button
                     onClick={handleManualSync}
                     title="Pull the latest edits back from Google Sheets"

@@ -561,16 +561,17 @@ export async function deleteRefDb(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete reference database')
 }
 
-// POST /projects/{name}/steps/6/sync-from-sheets
-// Pull the edited Google Sheet back into corrected_qcms.json (local + Supabase Storage).
-export async function syncStep6FromSheets(projectName: string): Promise<{
+// POST /projects/{name}/steps/{stepId}/sync-from-sheets
+// Pull the edited Google Sheet back into the canonical JSON (local + Supabase Storage).
+// Works for Step 6 (corrected_qcms.json) and Step 2 (all_qcms.json).
+export async function syncFromSheets(projectName: string, stepId: string): Promise<{
   total: number
   corrected_count: number
   newly_corrected: number
   file: string
   xlsx_file: string
 }> {
-  const res = await fetchWithRefresh(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/6/sync-from-sheets`, {
+  const res = await fetchWithRefresh(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/${encodeURIComponent(stepId)}/sync-from-sheets`, {
     method: 'POST',
     headers: { ...getAuthHeaders() }
   })
