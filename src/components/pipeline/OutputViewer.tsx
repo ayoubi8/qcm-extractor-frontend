@@ -51,8 +51,9 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
             const data = await fetchStepOutput(projectName, stepId);
             setFiles(data.files);
           } catch {}
-          setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
-          setTimeout(() => setSyncToast(null), 4000);
+          const propMsg = result.propagated > 0 ? ` (${result.propagated} propagated to ${stepId === '6' ? 'Step 2' : 'Step 6'})` : '';
+          setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets${propMsg}`);
+          setTimeout(() => setSyncToast(null), 5000);
         }
       } catch (e: any) {
         // 409 = no sheet opened yet, 401 = need re-auth — silent in auto-mode
@@ -78,11 +79,12 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
           const data = await fetchStepOutput(projectName, stepId);
           setFiles(data.files);
         } catch {}
-        setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets`);
+        const propMsg = result.propagated > 0 ? ` (${result.propagated} propagated to ${stepId === '6' ? 'Step 2' : 'Step 6'})` : '';
+        setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets${propMsg}`);
       } else {
         setSyncToast(`Sheet is up to date (${result.total} rows)`);
       }
-      setTimeout(() => setSyncToast(null), 4000);
+      setTimeout(() => setSyncToast(null), 5000);
     } catch (e: any) {
       alert(e?.message || 'Sync from Sheets failed');
     } finally {

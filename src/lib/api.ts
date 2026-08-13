@@ -568,6 +568,7 @@ export async function syncFromSheets(projectName: string, stepId: string): Promi
   total: number
   corrected_count: number
   newly_corrected: number
+  propagated: number
   file: string
   xlsx_file: string
 }> {
