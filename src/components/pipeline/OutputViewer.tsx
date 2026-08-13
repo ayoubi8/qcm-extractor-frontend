@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncFromSheets } from '../../lib/api';
+import { usePipelineStore } from '../../store/pipelineStore';
+import type { StepStatus } from '../../types';
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -126,6 +128,33 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
     setHistoryRuns([]);
     loadAll();
   }, [projectName, stepId]);
+
+  // Auto-refresh output when this step finishes running (status → 'done' or 'error').
+  // Without this, the user had to click away and back to see fresh files after a run.
+  const stepStatus = usePipelineStore(s => s.steps.find(st => st.id.toString() === stepId)?.status);
+  const prevStatusRef = useRef<StepStatus | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = stepStatus as StepStatus | undefined;
+    // Only refetch on the running → done/error transition (not on idle page-load).
+    if (prev === 'running' && (stepStatus === 'done' || stepStatus === 'error')) {
+      (async () => {
+        try {
+          const data = await fetchStepOutput(projectName, stepId);
+          setFiles(data.files);
+        } catch (err) {
+          console.error('Auto-refresh after run failed:', err);
+        }
+        try {
+          const res = await fetch(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/${stepId}/history`, {
+            headers: getAuthHeaders()
+          });
+          const hdata = await res.json();
+          setHistoryRuns(hdata.runs || []);
+        } catch {}
+      })();
+    }
+  }, [stepStatus, projectName, stepId]);
 
   const loadHistory = async () => {
     // Called on manual refresh via the button toggle
