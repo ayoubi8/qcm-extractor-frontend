@@ -189,6 +189,20 @@ export async function runStep(projectName: string, stepId: number, config: objec
   return res.json()
 }
 
+// POST /projects/{name}/steps/{stepId}/stop
+export async function stopStep(projectName: string, stepId: number, mode: 'stop' | 'cancel' = 'stop') {
+  const res = await fetchWithRefresh(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/${stepId}/stop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ mode }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || 'Failed to stop step')
+  }
+  return res.json()
+}
+
 // GET /projects/{name}/steps/{stepId}/status
 export async function getStepStatus(projectName: string, stepId: number): Promise<{ status: any, output_exists: boolean }> {
   const res = await fetchWithRefresh(`${BASE}/projects/${encodeURIComponent(projectName)}/steps/${stepId}/status`, {
@@ -397,6 +411,19 @@ export async function fetchStepOutput(projectName: string, stepId: string): Prom
   })
   if (!res.ok) throw new Error('Failed to fetch step output list')
   return res.json()
+}
+
+// DELETE /projects/{name}/steps/{stepId}/output/{filename}
+export async function deleteStepOutput(projectName: string, stepId: string, filename: string): Promise<void> {
+  const encodedFilename = filename.split('/').map(encodeURIComponent).join('/')
+  const res = await fetchWithRefresh(
+    `${BASE}/projects/${encodeURIComponent(projectName)}/steps/${encodeURIComponent(stepId)}/output/${encodedFilename}`,
+    { method: 'DELETE', headers: { ...getAuthHeaders() } },
+  )
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || 'Failed to delete output')
+  }
 }
 
 // GET /projects/{name}/steps/{step_id}/output/{filename}

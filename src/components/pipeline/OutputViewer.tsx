@@ -1,9 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncFromSheets } from '../../lib/api';
+import { fetchStepOutput, fetchAuthenticatedBlobUrl, downloadAuthenticatedFile, syncFromSheets, deleteStepOutput } from '../../lib/api';
 import { usePipelineStore } from '../../store/pipelineStore';
 import type { StepStatus } from '../../types';
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+function sortOutputFiles(items: any[]): any[] {
+  return [...items].sort((a, b) => {
+    const pageA = String(a.name).match(/(?:^|\/)page_(\d+)(?:\.[^/]*)?$/i)
+    const pageB = String(b.name).match(/(?:^|\/)page_(\d+)(?:\.[^/]*)?$/i)
+    if (pageA && pageB) return Number(pageA[1]) - Number(pageB[1])
+    if (pageA) return -1
+    if (pageB) return 1
+    return String(a.name).localeCompare(String(b.name), undefined, { numeric: true })
+  })
+}
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('qcm_token')
@@ -32,6 +43,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
   // Step 6 auto-sync state
   const [syncing, setSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const hasOpenedSheetRef = useRef(false);
   const syncingRef = useRef(false);  // guard against overlapping sync calls
 
@@ -51,7 +63,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
           // Refresh file list so the new timestamped xlsx appears
           try {
             const data = await fetchStepOutput(projectName, stepId);
-            setFiles(data.files);
+            setFiles(sortOutputFiles(data.files));
           } catch {}
           const propMsg = result.propagated > 0 ? ` (${result.propagated} propagated to ${stepId === '6' ? 'Step 2' : 'Step 6'})` : '';
           setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets${propMsg}`);
@@ -79,7 +91,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       if (result.newly_corrected > 0) {
         try {
           const data = await fetchStepOutput(projectName, stepId);
-          setFiles(data.files);
+          setFiles(sortOutputFiles(data.files));
         } catch {}
         const propMsg = result.propagated > 0 ? ` (${result.propagated} propagated to ${stepId === '6' ? 'Step 2' : 'Step 6'})` : '';
         setSyncToast(`Synced ${result.newly_corrected} change${result.newly_corrected === 1 ? '' : 's'} from Google Sheets${propMsg}`);
@@ -95,13 +107,30 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
     }
   };
 
+  const handleDeleteFile = async (filename: string) => {
+    if (!window.confirm(`Delete ${filename}?`)) return;
+    setDeletingFile(filename);
+    try {
+      await deleteStepOutput(projectName, stepId, filename);
+      setFiles(prev => prev.filter(file => file.name !== filename));
+      if (previewFile === filename) {
+        setPreviewFile(null);
+        setPreviewContent('');
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Delete failed');
+    } finally {
+      setDeletingFile(null);
+    }
+  };
+
   useEffect(() => {
     async function loadAll() {
       // 1. Load current step files
       setLoadingFiles(true);
       try {
         const data = await fetchStepOutput(projectName, stepId);
-        setFiles(data.files);
+        setFiles(sortOutputFiles(data.files));
       } catch (err) {
         console.error(err);
       } finally {
@@ -115,7 +144,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
         });
         const hdata = await res.json();
         const runs = hdata.runs || [];
-        setHistoryRuns(runs);
+        setHistoryRuns(runs.map((run: any) => ({ ...run, files: sortOutputFiles(run.files || []) })));
         if (runs.length > 0) setSelectedRun(runs[0].run_id);
       } catch (err) {
         console.error('History load error:', err);
@@ -141,7 +170,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       (async () => {
         try {
           const data = await fetchStepOutput(projectName, stepId);
-          setFiles(data.files);
+          setFiles(sortOutputFiles(data.files));
         } catch (err) {
           console.error('Auto-refresh after run failed:', err);
         }
@@ -150,7 +179,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
             headers: getAuthHeaders()
           });
           const hdata = await res.json();
-          setHistoryRuns(hdata.runs || []);
+            setHistoryRuns((hdata.runs || []).map((run: any) => ({ ...run, files: sortOutputFiles(run.files || []) })));
         } catch {}
       })();
     }
@@ -165,7 +194,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
       });
       const data = await res.json();
       const runs = data.runs || [];
-      setHistoryRuns(runs);
+      setHistoryRuns(runs.map((run: any) => ({ ...run, files: sortOutputFiles(run.files || []) })));
       if (runs.length > 0 && !selectedRun) setSelectedRun(runs[0].run_id);
     } catch (err) {
       console.error(err);
@@ -353,7 +382,7 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
             </div>
           </div>
         )}
-        {(showHistory ? (historyRuns.find(r => r.run_id === selectedRun)?.files || []) : files).map((file) => (
+        {sortOutputFiles(showHistory ? (historyRuns.find(r => r.run_id === selectedRun)?.files || []) : files).map((file) => (
           <div key={file.name} className="space-y-2">
             <div className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
               previewFile === file.name
@@ -440,6 +469,19 @@ export function OutputViewer({ projectName, stepId }: OutputViewerProps) {
                     : <span className="material-symbols-outlined text-[16px]">open_in_new</span>
                   }
                 </button>
+
+                {!showHistory && (
+                  <button
+                    onClick={() => handleDeleteFile(file.name)}
+                    title="Delete result"
+                    disabled={deletingFile === file.name}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error/10 transition-colors disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {deletingFile === file.name ? 'hourglass_top' : 'delete'}
+                    </span>
+                  </button>
+                )}
 
                 {["2", "6"].includes(stepId) && file.name.endsWith('.xlsx') && !showHistory && (
                   <button
