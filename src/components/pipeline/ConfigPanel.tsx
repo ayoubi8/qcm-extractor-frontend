@@ -8,7 +8,7 @@ import { Step8Config } from './configs/Step8Config'
 import { StepRunOnly } from './configs/StepRunOnly'
 import { runStep, stopStep, connectLogStream, getStepStatus } from '../../lib/api'
 import { useAppStore } from '../../store/appStore'
-import { OutputViewer } from './OutputViewer'
+import { StepResultsCard } from '../results/StepResultsCard'
 import { useStepHistory } from '../../hooks/useStepHistory'
 
 // Steps 3, 4 & 5 are intentionally absent:
@@ -135,6 +135,10 @@ export function ConfigPanel() {
           model_fallback: s.model_fallback,
           extraction_guidance: s.extraction_guidance,
           clinical_case_hints: s.clinical_case_hints,
+          exam_mode: s.exam_mode ?? 'auto',
+          exam_source: s.exam_source ?? '',
+          exam_period: s.exam_period ?? '',
+          exam_year: s.exam_year ?? '',
           // Step 3 config is embedded in the merged Step 2 panel and
           // forwarded to run_post_step2_metadata. Includes huge_edit flag.
           step3: store.step3Config,
@@ -272,7 +276,7 @@ export function ConfigPanel() {
         )}
 
         {activeProject && (
-          <OutputViewer projectName={activeProject.name} stepId={activeStep.id.toString()} />
+          <StepResultsCard project={activeProject.name} stepId={activeStep.id.toString()} />
         )}
       </div>
     </section>
